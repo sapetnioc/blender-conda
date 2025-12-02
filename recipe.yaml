@@ -1,0 +1,97 @@
+context:
+  name: blender
+  version: 5.0.0
+  python_version: "3.11"
+
+package:
+  name: ${{ name|lower }}
+  version: ${{ version }}
+
+source:
+  git: https://projects.blender.org/blender/blender.git
+  tag: v${{ version }}
+
+requirements:
+  build:
+    - ${{ compiler('cxx') }} 
+    - gcc=14
+    - gxx=14
+    - make
+    - cmake
+    - git
+    - git-lfs
+    - subversion
+    - sed
+  host:
+    - python=${{ python_version }}
+    - pkgconfig
+    - xorg-libx11
+    - xorg-xproto
+    - xorg-kbproto
+    - xorg-libxxf86vm
+    - xorg-libxcursor
+    - xorg-libxi
+    - xorg-libxrandr
+    - xorg-libxinerama
+    - xorg-libsm
+    - libegl
+    - wayland
+    - wayland-protocols
+    - libxkbcommon
+    - dbus
+    - libegl-devel
+    - numpy
+    - requests
+    - zstandard
+  run:
+    - ${{ pin_compatible('python', lower_bound='x.x', upper_bound='x.x') }}
+    - ${{ pin_compatible('xorg-libx11', exact=True) }}
+    - ${{ pin_compatible('xorg-xproto', exact=True) }}
+    - ${{ pin_compatible('xorg-kbproto', exact=True) }}
+    - ${{ pin_compatible('xorg-libxxf86vm', exact=True) }}
+    - ${{ pin_compatible('xorg-libxcursor', exact=True) }}
+    - ${{ pin_compatible('xorg-libxi', exact=True) }}
+    - ${{ pin_compatible('xorg-libxrandr', exact=True) }}
+    - ${{ pin_compatible('xorg-libxinerama', exact=True) }}
+    - ${{ pin_compatible('xorg-libsm', exact=True) }}
+    - ${{ pin_compatible('libegl', exact=True) }}
+    - ${{ pin_compatible('wayland', exact=True) }}
+    - ${{ pin_compatible('wayland-protocols', exact=True) }}
+    - ${{ pin_compatible('libxkbcommon', exact=True) }}
+    - ${{ pin_compatible('dbus', exact=True) }}
+    - ${{ pin_compatible('libegl-devel', exact=True) }}
+    - ${{ pin_compatible('numpy', lower_bound='x.x', upper_bound='x') }}
+    - ${{ pin_compatible('requests', lower_bound='x.x', upper_bound='x.x') }}
+    - ${{ pin_compatible('zstandard', exact=True) }}
+
+
+build:
+  number: 0
+  skip:
+    - win
+    - osx
+
+  script: |
+    make update
+    # Ugly workaround: four MaterialX libraries are missing to link the blender executable
+    # How to fix this the right way ?
+    cp -a lib/linux_x64/materialx/lib/* $CONDA_PREFIX/lib
+    cp -a lib/linux_x64/materialx/lib/* "$PREFIX/lib"
+    sed -i 's/set(PLATFORM_LINKLIBS "")/set(PLATFORM_LINKLIBS "-lMaterialXRender -lMaterialXGenGlsl -lMaterialXGenMsl -lMaterialXGenShader")/g' CMakeLists.txt
+
+    # Fix a problem to find numpy includes
+    sed -i 's:set(_numpy_include "core/include"):set(_numpy_include "_core/include"):g' CMakeLists.txt
+
+    # Do not use Python provided by Blender
+    rm -r lib/linux_x64/python
+
+    # Blender compilation and installation
+    mkdir build_linux
+    cd build_linux
+    cmake .. -DCMAKE_INSTALL_PREFIX="$PREFIX/blender-${{ version }}" \
+        -DPYTHON_NUMPY_INCLUDE_DIRS=$(python -c "import sysconfig; print(sysconfig.get_config_var('LIBDEST'))")/site-packages/numpy/_core/include \
+        -DWITH_PYTHON_INSTALL=OFF
+    
+    make -j10
+    make install
+    ln -s ../blender-${{ version }}/blender $PREFIX/bin/blender
